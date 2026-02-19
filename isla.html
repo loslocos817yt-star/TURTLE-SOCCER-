@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>PattitexTEC - En Construcción</title>
+  <style>
+    /* Estilos base manteniendo la estética del original */
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: radial-gradient(circle, #07394a, #02222b);
+      color: #fff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    /* Contenedor para la tortuga "Pro" */
+    .turtle-container {
+      font-size: 80px; /* Tamaño temporal para emoji, sustituir por <img> o Canvas */
+      margin-bottom: 20px;
+      filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-20px); }
+    }
+
+    /* Mensaje solicitado */
+    h1 {
+      font-size: 1.5rem;
+      max-width: 80%;
+      line-height: 1.4;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 20px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    /* Botón estilo original */
+    #back-button {
+      margin-top: 30px;
+      text-decoration: none;
+      color: #fff;
+      background: rgba(0,0,0,0.6);
+      padding: 12px 24px;
+      border-radius: 12px;
+      border: 2px solid #fff;
+      font-weight: bold;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    #back-button:hover {
+      background: #fff;
+      color: #02222b;
+      transform: scale(1.1);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="turtle-container">
+    🐢🔨
+    <p style="font-size: 14px; margin: 0;">[Tortuga Pro 3D]</p>
+  </div>
+
+  <h1>
+    "Wooops, este lugar todavía no está construido, regresa en un par de días o semanas para ver si el equipo de **PattitexTEC** ya lo ha terminado"
+  </h1>
+
+  <a id="back-button" href="index.html">Salió al menú</a>
+
+</body>
+</html>
