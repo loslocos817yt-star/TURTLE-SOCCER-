@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Turtle Shop 3D - Vertical</title>
+
+    <!-- Favicon pequeño -->
+    <link rel="icon" type="image/jpeg" href="web/web.jpg">
+
+    <style>
+        @font-face { font-family: 'f'; src: url('assets/ttf/font.ttf'); }
+
+        body { 
+            margin: 0; 
+            background: #000d1a; 
+            color: white; 
+            font-family: 'f', sans-serif; 
+            height: 100vh;
+            display: flex;
+            flex-direction: column; /* DISEÑO ARRIBA/ABAJO */
+            overflow: hidden;
+        }
+
+        /* --- SECCIÓN SUPERIOR: PREVIEW 3D (Más pequeña) --- */
+        #preview-area {
+            width: 100%;
+            height: 35vh; /* Ocupa solo el 35% de la pantalla */
+            position: relative;
+            background: radial-gradient(circle at center, #162a47 0%, #000d1a 100%);
+            border-bottom: 4px solid #2e7d32; /* Línea divisoria abajo */
+        }
+        #canvas-container { width: 100%; height: 100%; }
+        
+        #product-info {
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            text-align: right;
+            pointer-events: none;
+        }
+        #p-name { font-size: 28px; color: #ffd700; text-shadow: 2px 2px #000; margin: 0; }
+        #p-price { font-size: 18px; color: #4caf50; background: rgba(0,0,0,0.6); padding: 2px 10px; border-radius: 10px; }
+
+        /* --- SECCIÓN INFERIOR: CATÁLOGO --- */
+        #catalog-area {
+            width: 100%;
+            flex: 1; /* Ocupa el resto del espacio */
+            display: flex;
+            flex-direction: column;
+            background: #05101e;
+        }
+
+        .header {
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #020a13;
+            font-size: 14px;
+        }
+        .coins { color: #ffd700; font-size: 18px; }
+        
+        #grid {
+            flex: 1;
+            overflow-y: auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            padding: 15px;
+        }
+        
+        .item-card {
+            background: #0f2238;
+            border: 2px solid #444;
+            border-radius: 8px;
+            padding: 10px;
+            cursor: pointer;
+            text-align: center;
+            opacity: 0.8;
+            font-size: 14px;
+            user-select: none;
+        }
+        .item-card.selected { border-color: #ffd700; opacity: 1; background: #172a45; }
+        .color-dot { width: 30px; height: 30px; border-radius: 50%; margin: 0 auto 5px; border: 2px solid #fff; }
+        
+        #action-area {
+            padding: 15px;
+            background: #020a13;
+            border-top: 2px solid #2e7d32;
+            text-align: center;
+        }
+        #main-btn {
+            font-family: 'f';
+            padding: 12px;
+            font-size: 20px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+            max-width: 400px;
+        }
+        .btn-buy { background: #ffd700; color: #000; }
+        .btn-equip { background: #2196f3; color: white; }
+        .btn-equipped { background: #4caf50; color: white; cursor: default; }
+
+        .back-link { display: inline-block; margin-top: 10px; color: #aaa; text-decoration: none; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+    <div id="preview-area">
+        <div id="canvas-container"></div>
+        <div id="product-info">
+            <h2 id="p-name">Cargando...</h2>
+            <div id="p-price">---</div>
+        </div>
+    </div>
+
+    <div id="catalog-area">
+        <div class="header">
+            <span>EQUIPAMIENTO</span>
+            <span class="coins">💰 <span id="wallet">0</span></span>
+        </div>
+        
+        <div id="grid"></div>
+
+        <div id="action-area">
+            <button id="main-btn" class="btn-buy">SELECCIONA UN ITEM</button><br>
+            <a href="index.html" class="back-link">VOLVER AL MENÚ</a>
+        </div>
+    </div>
+
+    <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}</script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- Datos locales (persistencia)
+        let coins = parseInt(localStorage.getItem('turtle_coins')) || 0;
+        let inventory = JSON.parse(localStorage.getItem('turtle_inventory')) || ['def']; // array de ids
+        let activeColor = localStorage.getItem('turtle_color_hex') || '#4DFF88';
+
+        // Archivos JSON con los items (ruta relativa)
+        const jsonFiles = ['default.json', 'fuego.json', 'oceano.json', 'oro.json'];
+
+        // DOM inicial
+        document.getElementById('wallet').innerText = coins;
+
+        // --- THREE.JS CONFIG ---
+        const scene = new THREE.Scene();
+        const container = document.getElementById('canvas-container');
+        const camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 0.1, 100);
+        const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        container.appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+        const light = new THREE.PointLight(0xffffff, 2);
+        light.position.set(5, 5, 5);
+        scene.add(light);
+
+        const texLoader = new THREE.TextureLoader();
+        const turtleGroup = new THREE.Group();
+        let turtleHead = null;
+
+        texLoader.load('assets/tortuga/camaparzon.jpeg', (tex) => {
+            const shell = new THREE.Mesh(
+                new THREE.SphereGeometry(2.5, 32, 20, 0, Math.PI * 2, 0, Math.PI / 2),
+                new THREE.MeshStandardMaterial({ map: tex })
+            );
+            shell.scale.y = 0.7;
+            
+            turtleHead = new THREE.Mesh(
+                new THREE.SphereGeometry(1.2, 32, 32),
+                new THREE.MeshStandardMaterial({ color: activeColor })
+            );
+            turtleHead.position.set(0, 0.6, 2.5);
+
+            // Ojos
+            const eyeGeo = new THREE.SphereGeometry(0.3, 32, 32);
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            const eL = new THREE.Mesh(eyeGeo, eyeMat); eL.position.set(0.6, 0.4, 0.8);
+            const eR = new THREE.Mesh(eyeGeo, eyeMat); eR.position.set(-0.6, 0.4, 0.8);
+            turtleHead.add(eL, eR);
+
+            turtleGroup.add(shell, turtleHead);
+            scene.add(turtleGroup);
+        });
+
+        camera.position.set(0, 2, 12);
+        camera.lookAt(0, 0, 0);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (turtleGroup) turtleGroup.rotation.y += 0.015;
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // --- TIENDA ---
+        async function loadShop() {
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            let firstItem = null;
+
+            for (let file of jsonFiles) {
+                try {
+                    const res = await fetch(`store/tortuga/${file}`);
+                    if (!res.ok) continue;
+                    const data = await res.json();
+                    // data expected: { id, nombre, precio, color }
+                    const card = document.createElement('div');
+                    card.className = 'item-card';
+                    card.innerHTML = `<div class="color-dot" style="background:${data.color}"></div><div>${data.nombre}</div>`;
+                    grid.appendChild(card);
+
+                    // click handler
+                    card.addEventListener('click', () => {
+                        selectItem(data, card);
+                    });
+
+                    // auto-select if matches activeColor or pick first
+                    if (!firstItem) firstItem = { data, card };
+                    if (activeColor === data.color) {
+                        selectItem(data, card);
+                    }
+                } catch (e) {
+                    console.warn('Error cargando', file, e);
+                }
+            }
+
+            // si no hubo auto-select, seleccionar el primero
+            if (!document.querySelector('.item-card.selected') && firstItem) {
+                selectItem(firstItem.data, firstItem.card);
+            }
+        }
+
+        function selectItem(item, card) {
+            // actualizar 3D
+            if (turtleHead && item.color) turtleHead.material.color.set(item.color);
+
+            // actualizar info
+            document.getElementById('p-name').innerText = item.nombre || 'Sin nombre';
+            document.getElementById('p-price').innerText = inventory.includes(item.id) ? "DESBLOQUEADO" : `$${item.precio}`;
+
+            // selección visual
+            document.querySelectorAll('.item-card').forEach(c => c.classList.remove('selected'));
+            if (card) card.classList.add('selected');
+
+            // actualizar botón
+            updateMainButton(item);
+        }
+
+        function updateMainButton(item) {
+            const btn = document.getElementById('main-btn');
+            const isOwned = inventory.includes(item.id);
+            const isEquipped = (activeColor === item.color);
+
+            btn.onclick = null;
+            btn.className = ''; // reset
+
+            if (isEquipped) {
+                btn.innerText = "EQUIPADO";
+                btn.classList.add('btn-equipped');
+                btn.onclick = null;
+            } else if (isOwned) {
+                btn.innerText = "EQUIPAR AHORA";
+                btn.classList.add('btn-equip');
+                btn.onclick = () => equip(item);
+            } else {
+                btn.innerText = `COMPRAR POR $${item.precio}`;
+                btn.classList.add('btn-buy');
+                btn.onclick = () => buy(item);
+            }
+        }
+
+        // Compra
+        function buy(item) {
+            if (coins >= item.precio) {
+                coins -= item.precio;
+                inventory.push(item.id);
+                localStorage.setItem('turtle_coins', coins);
+                localStorage.setItem('turtle_inventory', JSON.stringify(inventory));
+                document.getElementById('wallet').innerText = coins;
+                updateMainButton(item);
+                alert("¡Compra exitosa!");
+            } else {
+                alert("¡Te faltan monedas!");
+            }
+        }
+
+        // Equipar
+        function equip(item) {
+            localStorage.setItem('turtle_color_hex', item.color);
+            activeColor = item.color;
+            if (turtleHead) turtleHead.material.color.set(activeColor);
+            updateMainButton(item);
+            alert("¡Skin equipada!");
+        }
+
+        // Resize del Canvas 3D
+        window.addEventListener('resize', () => {
+            const w = container.clientWidth;
+            const h = container.clientHeight;
+            renderer.setSize(w, h);
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+        });
+
+        // iniciar tienda
+        loadShop();
+    </script>
+</body>
+</html>
