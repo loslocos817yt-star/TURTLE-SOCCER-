@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>FC Falcons - Game</title>
+
+<link rel="icon" type="image/jpeg" href="web/web.jpg">
+
+<style>
+@font-face { font-family: 'f'; src: url('assets/ttf/font.ttf'); }
+body{margin:0;overflow:hidden;background:#4a90e2;font-family:'f',sans-serif;touch-action:none;color:#fff}
+.team{position:absolute;top:15px;font-size:18px;text-shadow:2px 2px #000;font-weight:bold;opacity:0.8}
+#left{left:20px} #right{right:20px}
+#sb{position:absolute;top:15px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);padding:8px 20px;border-radius:30px;border:2px solid #fff;display:flex;gap:20px;font-size:24px}
+#joy-base{position:absolute;bottom:40px;left:40px;width:90px;height:90px;background:rgba(255,255,255,0.2);border-radius:50%;border:2px solid #fff}
+#joy-stick{width:40px;height:40px;background:#fff;border-radius:50%;position:absolute;top:25px;left:25px}
+#goal-msg{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);font-size:80px;display:none;text-shadow:0 0 20px #ff4500;z-index:20; text-align: center;}
+.sub-msg { font-size: 30px; color: #ffd700; display: block; margin-top: 10px; }
+#back-menu { position: absolute; top: 10px; left: 10px; z-index: 100; text-decoration: none; background: rgba(0,0,0,0.5); padding: 5px 10px; color: white; border-radius: 5px; font-size: 12px; }
+#music-toggle { position: absolute; top: 10px; right: 10px; z-index: 100; text-decoration: none; background: rgba(0,0,0,0.5); padding: 5px 10px; color: white; border-radius: 5px; font-size: 12px; cursor: pointer; border: none; }
+</style>
+</head>
+<body>
+<a href="index.html" id="back-menu">SALIR</a>
+<button id="music-toggle">Cargando música...</button>
+
+<div class="team" id="left">TÚ</div><div class="team" id="right">RIVAL</div>
+<div id="sb"><span id="ps" style="color:#4DFF88">0</span> - <span id="es" style="color:#FF4D4D">0</span></div>
+<div id="goal-msg">¡GOL!<span class="sub-msg">+100 MONEDAS</span></div>
+<div id="joy-base"><div id="joy-stick"></div></div>
+
+<audio id="m" loop src="assets/music/childs_nightmare.ogg"></audio>
+<audio id="g" src="assets/music/grito.wav"></audio>
+<audio id="k" src="assets/sfx/kick.wav"></audio>
+
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+
+// --- MÚSICA REPARADA (Web Audio API: GainNode, resume on gesture, botón mute/fade) ---
+const musicEl = document.getElementById('m');
+const musicToggle = document.getElementById('music-toggle');
+const DEFAULT_VOL = 0.7;
+
+let audioCtx = null;
+let musicSource = null;
+let gainNode = null;
+let musicInitialized = false;
+let musicPlaying = false;
+
+function initMusic() {
+    if (musicInitialized) return;
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        musicSource = audioCtx.createMediaElementSource(musicEl);
+        gainNode = audioCtx.createGain();
+        gainNode.gain.value = DEFAULT_VOL;
+        musicSource.connect(gainNode).connect(audioCtx.destination);
+        musicInitialized = true;
+        updateMusicButton();
+    } catch (e) {
+        // En browsers muy viejos que no soporten WebAudio, fallback a control directo
+        console.warn('WebAudio no disponible, usando volumen directo.', e);
+        musicEl.volume = DEFAULT_VOL;
+        musicInitialized = false;
+        musicToggle.innerText = 'Música (nativa)';
+    }
+}
+
+// resume context on first user gesture (solves mobile autoplay restrictions)
+function resumeAudioContext() {
+    if (!audioCtx) initMusic();
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(()=>{});
+    }
+}
+
+// fade helper (ms)
+function setMusicVolume(target, fadeMs = 250) {
+    if (!gainNode || !audioCtx) { musicEl.volume = target; return; }
+    const now = audioCtx.currentTime;
+    gainNode.gain.cancelScheduledValues(now);
+    gainNode.gain.linearRampToValueAtTime(target, now + fadeMs/1000);
+}
+
+// update button label
+function updateMusicButton() {
+    if (!musicInitialized) {
+        musicToggle.innerText = musicPlaying ? 'Silenciar (nativa)' : 'Reproducir (nativa)';
+        return;
+    }
+    musicToggle.innerText = musicPlaying ? 'Silenciar' : 'Reproducir';
+}
+
+// toggle play / mute with small fade
+musicToggle.addEventListener('click', () => {
+    resumeAudioContext();
+    if (!musicInitialized) initMusic();
+    if (!musicPlaying) {
+        // play
+        musicEl.play().catch(()=>{});
+        setMusicVolume(DEFAULT_VOL, 200);
+        musicPlaying = true;
+    } else {
+        // fade out then pause
+        setMusicVolume(0, 200);
+        // esperar fade y pausar (usamos timeout pequeño)
+        setTimeout(()=>{ try{ musicEl.pause(); }catch{} }, 220);
+        musicPlaying = false;
+    }
+    updateMusicButton();
+});
+
+// ensure AudioContext initialized on first user gesture to allow immediate play
+function unlockAudioOnGesture() {
+    // resume once
+    resumeAudioContext();
+    // if music wasn't playing, start in background muted (optional)
+    if (!musicPlaying) {
+        try { musicEl.play().then(()=>{ musicEl.pause(); }).catch(()=>{}); } catch(e){}
+    }
+    document.removeEventListener('pointerdown', unlockAudioOnGesture);
+}
+document.addEventListener('pointerdown', unlockAudioOnGesture, {once:true});
+
+// Optional: pause music when tab hidden to save resources, resume when visible if it was playing
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        if (!musicEl.paused) {
+            musicEl._wasPlayingBeforeHidden = true;
+            musicEl.pause();
+        } else musicEl._wasPlayingBeforeHidden = false;
+    } else {
+        if (musicEl._wasPlayingBeforeHidden) {
+            resumeAudioContext();
+            musicEl.play().catch(()=>{});
+        }
+    }
+});
+
+// Inicializar botón (sin auto-play)
+musicToggle.innerText = 'Reproducir música';
+updateMusicButton();
+
+// -------------------- resto del código (no modificado) --------------------
+// --- CONFIG TIENDA ---
+const PLAYER_COLOR_HEX = localStorage.getItem('turtle_color_hex') || '#4DFF88';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x4a90e2);
+scene.fog = new THREE.Fog(0x4a90e2, 20, 90);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
+const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+sun.position.set(15, 30, 15); sun.castShadow = true;
+scene.add(sun);
+
+// TEXTURA MURO
+const c = document.createElement('canvas'); const ctx = c.getContext('2d');
+c.width = 512; c.height = 64; ctx.fillStyle = '#222'; ctx.fillRect(0,0,512,64);
+ctx.fillStyle = '#fff'; ctx.font = 'bold 35px sans-serif'; ctx.textAlign = 'center';
+ctx.fillText('FC FALCONS     FC FALCONS', 256, 45);
+const wallTex = new THREE.CanvasTexture(c); wallTex.wrapS = THREE.RepeatWrapping; wallTex.repeat.set(4, 1);
+
+// CAMPO
+const tex = new THREE.TextureLoader();
+const grass = tex.load('assets/world/pasto.png'); grass.wrapS = grass.wrapT = THREE.RepeatWrapping; grass.repeat.set(10, 15);
+const field = new THREE.Mesh(new THREE.PlaneGeometry(60, 110), new THREE.MeshStandardMaterial({map:grass}));
+field.rotation.x = -Math.PI/2; field.receiveShadow = true; scene.add(field);
+
+const wallMat = new THREE.MeshStandardMaterial({map:wallTex});
+const walls = [];
+const w1 = new THREE.Mesh(new THREE.BoxGeometry(60, 6, 1), wallMat); w1.position.set(0, 3, -55.5); scene.add(w1); walls.push(w1);
+const w2 = new THREE.Mesh(new THREE.BoxGeometry(60, 6, 1), wallMat); w2.position.set(0, 3, 55.5); scene.add(w2); walls.push(w2);
+const w3 = new THREE.Mesh(new THREE.BoxGeometry(1, 6, 112), wallMat); w3.position.set(-30.5, 3, 0); scene.add(w3); walls.push(w3);
+const w4 = new THREE.Mesh(new THREE.BoxGeometry(1, 6, 112), wallMat); w4.position.set(30.5, 3, 0); scene.add(w4); walls.push(w4);
+
+// PORTERÍAS
+const goalMat = new THREE.MeshStandardMaterial({color: 0xffffff});
+const goalPosts = [];
+function createGoal(z) {
+    const g = new THREE.Group();
+    const p1 = new THREE.Mesh(new THREE.BoxGeometry(1, 6, 1), goalMat); p1.position.set(-10, 3, 0);
+    const p2 = new THREE.Mesh(new THREE.BoxGeometry(1, 6, 1), goalMat); p2.position.set(10, 3, 0);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(21, 1, 1), goalMat); top.position.set(0, 6, 0);
+    g.add(p1, p2, top); g.position.z = z; scene.add(g);
+    goalPosts.push(p1, p2);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(21, 6, 1), new THREE.MeshBasicMaterial({visible:false}));
+    back.position.set(0, 3, z < 0 ? -1 : 1); g.add(back); walls.push(back);
+}
+createGoal(-54); createGoal(54);
+
+// BALÓN
+const ball = new THREE.Mesh(new THREE.SphereGeometry(1.1, 20, 20), new THREE.MeshStandardMaterial({color:0xffffff}));
+ball.castShadow = true; ball.position.y = 1.1; scene.add(ball);
+let bv = new THREE.Vector3(), bFric = 0.96;
+
+// --- FUNCION TORTUGA MEJORADA (OJOS NEGROS PEGADOS) ---
+function createT(colorArg) {
+    const g = new THREE.Group();
+    // Caparazón
+    const s = new THREE.Mesh(new THREE.SphereGeometry(2.2, 24, 12, 0, Math.PI*2, 0, Math.PI/2), new THREE.MeshStandardMaterial({map: tex.load('assets/tortuga/camaparzon.jpeg')}));
+    s.scale.y = 0.5; s.castShadow = true;
+    
+    // Cabeza
+    const h = new THREE.Mesh(new THREE.SphereGeometry(0.9, 16, 16), new THREE.MeshStandardMaterial({color: new THREE.Color(colorArg)}));
+    h.position.set(0, 0.4, 2); 
+    
+    // Ojos Negros (Ahora son hijos de 'h' - la cabeza, por lo que rotan con ella)
+    const eyeGeo = new THREE.SphereGeometry(0.18, 12, 12);
+    const eyeMat = new THREE.MeshStandardMaterial({color: 0x000000, roughness: 0.1}); // Negro brillante
+    const shineMat = new THREE.MeshBasicMaterial({color: 0xffffff}); // Brillo blanco pequeño
+    
+    // Ojo Izquierdo
+    const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+    eyeL.position.set(0.35, 0.25, 0.75); // Posición ajustada a la superficie
+    const shineL = new THREE.Mesh(new THREE.SphereGeometry(0.05), shineMat); shineL.position.set(0.08, 0.08, 0.12); eyeL.add(shineL);
+    h.add(eyeL);
+
+    // Ojo Derecho
+    const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+    eyeR.position.set(-0.35, 0.25, 0.75);
+    const shineR = new THREE.Mesh(new THREE.SphereGeometry(0.05), shineMat); shineR.position.set(0.08, 0.08, 0.12); eyeR.add(shineR);
+    h.add(eyeR);
+
+    g.add(s, h); 
+    return g;
+}
+
+// JUGADOR
+const p = createT(PLAYER_COLOR_HEX); 
+p.position.z = 25; scene.add(p);
+
+// ENEMIGO
+const e = createT(0x8b0000); 
+e.position.set(0,0,-25); scene.add(e);
+
+let input = new THREE.Vector2(), score = [0, 0], active = true, lK = 0, aid = null;
+
+// --- JOYSTICK (TU CODIGO ORIGINAL) ---
+window.addEventListener('pointerdown', ev => { if(ev.target.id.includes('joy')) aid = ev.pointerId; musicEl.play().catch(()=>{}); });
+window.addEventListener('pointermove', ev => {
+    if (ev.pointerId !== aid) return;
+    const b = document.getElementById('joy-base').getBoundingClientRect();
+    const dx = ev.clientX - (b.left + 45), dy = ev.clientY - (b.top + 45);
+    const d = Math.min(Math.sqrt(dx*dx+dy*dy), 35);
+    const a = Math.atan2(dy, dx);
+    document.getElementById('joy-stick').style.transform = `translate(${Math.cos(a)*d}px, ${Math.sin(a)*d}px)`;
+    input.set(Math.cos(a)*(d/35), Math.sin(a)*(d/35));
+});
+window.addEventListener('pointerup', () => { aid = null; input.set(0,0); document.getElementById('joy-stick').style.transform = ''; });
+
+function reset() {
+    ball.position.set(0, 6, 0); bv.set(0,0,0);
+    p.position.set(0,0,25); e.position.set(0,0,-25);
+    active = true;
+}
+
+function checkCollision(t, oldPos) {
+    const tBox = new THREE.Box3().setFromObject(t);
+    for(let w of walls) {
+        if(tBox.intersectsBox(new THREE.Box3().setFromObject(w))) { t.position.copy(oldPos); return; }
+    }
+    for(let post of goalPosts) {
+        if(tBox.intersectsBox(new THREE.Box3().setFromObject(post))) { t.position.copy(oldPos); return; }
+    }
+}
+
+function update() {
+    requestAnimationFrame(update);
+    if (!active) { renderer.render(scene, camera); return; }
+
+    // --- MOVIMIENTO JUGADOR ---
+    const pOldPos = p.position.clone();
+    p.position.x += input.x * 0.55; p.position.z += input.y * 0.55;
+    checkCollision(p, pOldPos);
+    
+    // ** CORRECCIÓN DE ROTACIÓN (NO JIRA A LA ZAR) **
+    if (input.length() > 0.1) {
+        const targetRot = Math.atan2(input.x, input.y);
+        // Esto calcula el camino más corto para girar, evitando vueltas completas locas
+        let rotDiff = targetRot - p.rotation.y;
+        while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+        while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+        p.rotation.y += rotDiff * 0.2; // 0.2 es la suavidad
+    }
+
+    // --- IA ENEMIGO ---
+    const eOldPos = e.position.clone();
+    const distBall = e.position.distanceTo(ball.position);
+    if (ball.position.z < 10 || distBall < 15) {
+        const ex = ball.position.x - e.position.x;
+        const ez = (ball.position.z - 4) - e.position.z;
+        e.position.x += Math.sign(ex) * 0.22;
+        e.position.z += Math.sign(ez) * 0.22;
+    } else {
+        e.position.x += (0 - e.position.x) * 0.03;
+        e.position.z += (-25 - e.position.z) * 0.03;
+    }
+    checkCollision(e, eOldPos);
+    
+    // Rotación enemigo corregida tambien
+    const targetERot = Math.atan2(ball.position.x - e.position.x, ball.position.z - e.position.z);
+    let rotEDiff = targetERot - e.rotation.y;
+    while (rotEDiff > Math.PI) rotEDiff -= Math.PI * 2;
+    while (rotEDiff < -Math.PI) rotEDiff += Math.PI * 2;
+    e.rotation.y += rotEDiff * 0.1;
+
+
+    bv.y -= 0.04; ball.position.add(bv);
+    if (ball.position.y < 1.1) { ball.position.y = 1.1; bv.y = Math.abs(bv.y)*0.4; }
+    bv.x *= bFric; bv.z *= bFric;
+
+    [p, e].forEach((t, i) => {
+        if (t.position.distanceTo(ball.position) < 3.5) {
+            const now = Date.now();
+            if (now - lK > 250) {
+                let d = new THREE.Vector3().subVectors(ball.position, t.position).normalize();
+                if(i === 1) {
+                    const err = (Math.random()-0.5)*15;
+                    d = new THREE.Vector3(err - ball.position.x, 0, 52 - ball.position.z).normalize();
+                }
+                bv.addScaledVector(d, i === 0 ? 2.3 : 1.6); bv.y = 0.12;
+                lK = now; document.getElementById('k').cloneNode().play().catch(()=>{});
+            }
+        }
+    });
+
+    if (Math.abs(ball.position.x) < 10) {
+        if (ball.position.z < -52) { 
+            score[0]++; 
+            document.getElementById('ps').innerText = score[0]; 
+            active=false; 
+            
+            let currentCoins = parseInt(localStorage.getItem('turtle_coins')) || 0;
+            localStorage.setItem('turtle_coins', currentCoins + 100);
+            
+            document.getElementById('goal-msg').style.display='block'; 
+            document.getElementById('g').play().catch(()=>{}); 
+            setTimeout(()=>{document.getElementById('goal-msg').style.display='none';reset()},1500); 
+        }
+        if (ball.position.z > 52) { score[1]++; document.getElementById('es').innerText = score[1]; active=false; reset(); }
+    }
+
+    if (Math.abs(ball.position.x) > 29) { bv.x *= -0.7; ball.position.x = Math.sign(ball.position.x)*29; }
+    if (Math.abs(ball.position.z) > 54) { bv.z *= -0.7; ball.position.z = Math.sign(ball.position.z)*54; }
+
+    camera.position.lerp(new THREE.Vector3(p.position.x, 10, p.position.z + 18), 0.1);
+    camera.lookAt(p.position.x, 0, p.position.z - 5);
+
+    renderer.render(scene, camera);
+}
+update();
+window.onresize = () => { camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); };
+</script>
+</body>
+</html>
